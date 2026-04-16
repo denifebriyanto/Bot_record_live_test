@@ -1,10 +1,11 @@
 import asyncio
 import requests
 import time
+import os
 from telegram import Bot
 
-TOKEN = "8577721420:AAH5QJ7QEOH11BLZJTo4x0kGUje0iDRr5BM"
-CHAT_ID = "6185081742"
+TOKEN = os.getenv("TOKEN")
+CHAT_ID = os.getenv("CHAT_ID")
 USERNAME = "arvianetha"
 
 bot = Bot(token=TOKEN)

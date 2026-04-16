@@ -1,8 +1,8 @@
-import asyncio
 import requests
 import time
 import os
 import subprocess
+import threading
 
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
@@ -45,19 +45,19 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"Target sekarang: @{USERNAME}")
 
 
-async def monitor(application):
+def monitor(app):
     global USERNAME
     while True:
         try:
             if check_live():
-                await application.bot.send_message(
+                app.bot.send_message(
                     chat_id=CHAT_ID,
                     text=f"🔴 @{USERNAME} sedang LIVE - Recording..."
                 )
 
                 file = record_live()
 
-                await application.bot.send_document(
+                app.bot.send_document(
                     chat_id=CHAT_ID,
                     document=open(file, "rb")
                 )
@@ -71,17 +71,17 @@ async def monitor(application):
             time.sleep(60)
 
 
-async def main():
+def main():
     app = ApplicationBuilder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("set", set_user))
     app.add_handler(CommandHandler("status", status))
 
-    asyncio.create_task(monitor(app))
+    thread = threading.Thread(target=monitor, args=(app,))
+    thread.start()
 
-    await app.run_polling()
+    app.run_polling()
 
 
 if __name__ == "__main__":
-    import asyncio
-    asyncio.get_event_loop().run_until_complete(main())
+    main()

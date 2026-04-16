@@ -11,6 +11,7 @@ TOKEN = os.getenv("TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
 USERNAME = "arvianetha"
+STOP_RECORD = False
 
 
 def check_live():
@@ -20,54 +21,81 @@ def check_live():
     return "live" in r.text.lower()
 
 
-def record_live():
-    filename = f"{USERNAME}.mp4"
+def record_live(duration=1200):  # 1200 = 20 menit
+    global STOP_RECORD
+
+    filename = f"{USERNAME}_{int(time.time())}.mp4"
     url = f"https://www.tiktok.com/@{USERNAME}/live"
 
-    command = [
+    process = subprocess.Popen([
         "yt-dlp",
         "-o", filename,
         url
-    ]
+    ])
 
-    subprocess.run(command)
+    start = time.time()
 
-    return filename
+    while True:
+        if STOP_RECORD:
+            process.terminate()
+            STOP_RECORD = False
+            return None
+
+        if time.time() - start > duration:
+            process.terminate()
+            return filename
+
+        time.sleep(1)
 
 
 async def set_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global USERNAME
+    global USERNAME, STOP_RECORD
+    STOP_RECORD = True
+
+    if len(context.args) == 0:
+        await update.message.reply_text("Gunakan: /set username")
+        return
+
     USERNAME = context.args[0]
-    await update.message.reply_text(f"Target diganti ke @{USERNAME}")
+
+    await update.message.reply_text(
+        f"🎯 Target diganti ke @{USERNAME}"
+    )
 
 
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(f"Target sekarang: @{USERNAME}")
+    await update.message.reply_text(
+        f"📡 Monitoring: @{USERNAME}"
+    )
 
 
 def monitor(app):
     global USERNAME
+
     while True:
         try:
             if check_live():
                 app.bot.send_message(
                     chat_id=CHAT_ID,
-                    text=f"🔴 @{USERNAME} sedang LIVE - Recording..."
+                    text=f"🔴 @{USERNAME} sedang LIVE\n🎥 Mulai record 20 menit..."
                 )
 
-                file = record_live()
+                file = record_live(1200)
 
-                app.bot.send_document(
-                    chat_id=CHAT_ID,
-                    document=open(file, "rb")
-                )
+                if file:
+                    app.bot.send_document(
+                        chat_id=CHAT_ID,
+                        document=open(file, "rb")
+                    )
 
-                time.sleep(600)
+                    os.remove(file)
+
+                time.sleep(10)
 
             time.sleep(30)
 
         except Exception as e:
-            print(e)
+            print("Error:", e)
             time.sleep(60)
 
 

@@ -3,13 +3,13 @@ import requests
 import time
 import os
 import subprocess
-from telegram import Bot
+from telegram import Update, Bot
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
 TOKEN = os.getenv("TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
-USERNAME = "arvianetha"
 
-bot = Bot(token=TOKEN)
+USERNAME = "arvianetha"
 
 def check_live():
     url = f"https://www.tiktok.com/@{USERNAME}/live"
@@ -33,7 +33,16 @@ def record_live():
 
     return filename
 
-async def main():
+async def set_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global USERNAME
+    USERNAME = context.args[0]
+    await update.message.reply_text(f"Target diganti ke @{USERNAME}")
+
+async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(f"Target sekarang: @{USERNAME}")
+
+async def monitor(bot):
+    global USERNAME
     while True:
         try:
             if check_live():
@@ -56,5 +65,15 @@ async def main():
         except Exception as e:
             print(e)
             time.sleep(60)
+
+async def main():
+    app = ApplicationBuilder().token(TOKEN).build()
+
+    app.add_handler(CommandHandler("set", set_user))
+    app.add_handler(CommandHandler("status", status))
+
+    asyncio.create_task(monitor(app.bot))
+
+    await app.run_polling()
 
 asyncio.run(main())

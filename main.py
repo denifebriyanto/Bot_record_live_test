@@ -5,7 +5,7 @@ import requests
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
-USERNAME = os.getenv("seccfia1")
+USERNAME = os.getenv("pandaganjaya")
 
 def get_stream():
     cmd = [

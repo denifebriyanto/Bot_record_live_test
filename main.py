@@ -7,7 +7,6 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 USERNAME = os.getenv("USERNAME")
 
-DURATION = 600
 last_update_id = None
 
 
@@ -28,7 +27,7 @@ def get_stream():
             "yt-dlp",
             "--no-warnings",
             "--user-agent",
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
             "-f", "best",
             "-g",
             f"https://www.tiktok.com/@{USERNAME}/live"
@@ -40,7 +39,7 @@ def get_stream():
             print("Stream ditemukan")
             return stream
 
-    except Exception as e:
+    except:
         print("Belum live...")
 
     return None
@@ -60,13 +59,13 @@ def record():
         "-i",
         stream,
         "-t",
-        str(DURATION),
+        "600",
         "-c",
         "copy",
         filename
     ]
 
-    print(f"Recording {DURATION} detik...")
+    print("Recording 10 menit...")
     subprocess.run(command)
 
     return filename
@@ -98,50 +97,45 @@ def send_message(text):
 
 
 def check_command():
-    global last_update_id, USERNAME, DURATION
+    global last_update_id
+    global USERNAME
 
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates"
-    r = requests.get(url).json()
+    try:
+        url = f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates"
+        r = requests.get(url).json()
 
-    if not r["result"]:
-        return
+        if "result" not in r:
+            return
 
-    update = r["result"][-1]
+        if not r["result"]:
+            return
 
-    if last_update_id == update["update_id"]:
-        return
+        update = r["result"][-1]
 
-    last_update_id = update["update_id"]
+        if last_update_id == update["update_id"]:
+            return
 
-    if "message" in update:
-        text = update["message"].get("text", "")
+        last_update_id = update["update_id"]
 
-        if text == "/status":
-            send_message(
-                f"Bot aktif\nUser: {USERNAME}\nDurasi: {DURATION//60} menit"
-            )
+        if "message" in update:
+            text = update["message"].get("text", "")
 
-        elif text == "/user":
-            send_message(f"User sekarang: {USERNAME}")
+            if text == "/status":
+                send_message("Bot aktif dan monitoring")
 
-        elif text.startswith("/setuser"):
-            try:
+            elif text == "/user":
+                send_message(f"User: {USERNAME}")
+
+            elif text.startswith("/setuser"):
                 new_user = text.split(" ")[1]
                 USERNAME = new_user
-                send_message(f"User diganti ke: {USERNAME}")
-            except:
-                send_message("Format: /setuser username")
+                send_message(f"Ganti user ke @{USERNAME}")
 
-        elif text.startswith("/duration"):
-            try:
-                menit = int(text.split(" ")[1])
-                DURATION = menit * 60
-                send_message(f"Durasi diganti: {menit} menit")
-            except:
-                send_message("Format: /duration 10")
+            elif text == "/restart":
+                send_message("Restart recording...")
 
-        elif text == "/restart":
-            send_message("Restart recording...")
+    except Exception as e:
+        print("Command Error:", e)
 
 
 install_ffmpeg()

@@ -7,7 +7,7 @@ import re
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
-USERNAME = os.getenv("USERNAME")
+USERNAME = os.getenv("ayusalwa0221")
 
 last_update_id = None
 

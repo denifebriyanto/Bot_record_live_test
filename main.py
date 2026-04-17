@@ -10,7 +10,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 TOKEN = os.getenv("TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
-USERNAME = "arvianetha"
+USERNAME = "seccfia1"
 STOP_RECORD = False
 
 

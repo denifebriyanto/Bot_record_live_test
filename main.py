@@ -25,7 +25,7 @@ def install_ffmpeg():
 
 def get_room_id():
     try:
-        url = f"https://www.tiktok.com/@{USERNAME}/live"
+        url = f"https://www.tiktok.com/@ayusalwa0221/live"
 
         headers = {
             "User-Agent": "Mozilla/5.0"

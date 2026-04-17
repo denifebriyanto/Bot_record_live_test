@@ -26,28 +26,20 @@ def get_stream():
     try:
         url = f"https://www.tiktok.com/@{USERNAME}/live"
 
-        headers = {
-            "User-Agent":
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
-        }
+        cmd = [
+            "yt-dlp",
+            "--no-warnings",
+            "--dump-json",
+            url
+        ]
 
-        r = requests.get(url, headers=headers)
+        data = subprocess.check_output(cmd).decode()
 
-        if "liveRoom" in r.text:
-            print("Live terdeteksi (API)")
-            
-            cmd = [
-                "yt-dlp",
-                "-f", "best",
-                "-g",
-                url
-            ]
+        info = json.loads(data)
 
-            stream = subprocess.check_output(cmd).decode().strip()
-
-            if stream:
-                print("Stream ditemukan")
-                return stream
+        if "url" in info:
+            print("Stream ditemukan")
+            return info["url"]
 
     except Exception as e:
         print("Belum live...")

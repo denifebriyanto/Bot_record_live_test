@@ -3,9 +3,22 @@ import time
 import subprocess
 import requests
 
+
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 USERNAME = os.getenv("USERNAME")
+
+
+def install_ffmpeg():
+    try:
+        subprocess.run(
+            "apt-get update && apt-get install -y ffmpeg",
+            shell=True,
+            check=True
+        )
+        print("FFMPEG Installed")
+    except:
+        print("FFMPEG install gagal")
 
 
 def get_stream():
@@ -24,7 +37,7 @@ def get_stream():
             print("Stream ditemukan")
             return stream
 
-    except Exception as e:
+    except Exception:
         print("Belum live...")
 
     return None
@@ -68,6 +81,9 @@ def send_telegram(file):
 
     print("Video terkirim")
 
+
+# install ffmpeg saat start
+install_ffmpeg()
 
 while True:
     try:

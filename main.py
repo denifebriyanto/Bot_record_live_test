@@ -7,7 +7,7 @@ import re
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
-USERNAME = os.getenv("ayusalwa0221")
+USERNAME = os.getenv("USERNAME")
 
 last_update_id = None
 
@@ -23,9 +23,9 @@ def install_ffmpeg():
         print("Install ffmpeg gagal")
 
 
-def get_room_id():
+def get_stream():
     try:
-        url = f"https://www.tiktok.com/@ayusalwa0221/live"
+        url = f"https://www.tiktok.com/@{USERNAME}/live"
 
         headers = {
             "User-Agent": "Mozilla/5.0"
@@ -33,38 +33,27 @@ def get_room_id():
 
         r = requests.get(url, headers=headers)
 
-        room = re.search(r'"roomId":"(\d+)"', r.text)
+        sigi = re.search(
+            r'<script id="SIGI_STATE".*?>(.*?)</script>',
+            r.text
+        )
 
-        if room:
-            print("Room ditemukan")
-            return room.group(1)
+        if not sigi:
+            print("Belum live...")
+            return None
 
-    except:
-        pass
+        data = json.loads(sigi.group(1))
 
-    return None
+        room = data["LiveRoom"]["liveRoomUserInfo"]["liveRoom"]["streamData"]["pull_data"]
 
-
-def get_stream():
-
-    room_id = get_room_id()
-
-    if not room_id:
-        print("Belum live...")
-        return None
-
-    try:
-        api = f"https://webcast.tiktok.com/webcast/room/info/?room_id={room_id}"
-
-        r = requests.get(api).json()
-
-        stream = r["data"]["stream_url"]["hls_pull_url"]
+        stream = json.loads(room)["stream_data"]["hls"]
 
         print("Stream ditemukan")
+
         return stream
 
-    except:
-        print("Stream gagal ambil")
+    except Exception as e:
+        print("Belum live...")
 
     return None
 
@@ -110,19 +99,6 @@ def send_telegram(file):
     print("Video terkirim")
 
 
-def send_message(text):
-
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-
-    requests.post(
-        url,
-        data={
-            "chat_id": CHAT_ID,
-            "text": text
-        }
-    )
-
-
 def check_command():
 
     global last_update_id
@@ -151,10 +127,7 @@ def check_command():
             text = update["message"].get("text", "")
 
             if text == "/status":
-                send_message("Bot aktif dan monitoring")
-
-            elif text == "/user":
-                send_message(f"User: {USERNAME}")
+                send_message("Bot aktif")
 
             elif text.startswith("/setuser"):
 
@@ -164,8 +137,21 @@ def check_command():
 
                 send_message(f"Ganti user ke @{USERNAME}")
 
-    except Exception as e:
-        print("Command Error:", e)
+    except:
+        pass
+
+
+def send_message(text):
+
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+
+    requests.post(
+        url,
+        data={
+            "chat_id": CHAT_ID,
+            "text": text
+        }
+    )
 
 
 install_ffmpeg()
@@ -174,9 +160,9 @@ while True:
 
     try:
 
-        check_command()
-
         print("Monitoring...")
+
+        check_command()
 
         file = record()
 

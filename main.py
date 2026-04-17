@@ -2,6 +2,7 @@ import os
 import time
 import subprocess
 import requests
+import json
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
@@ -23,22 +24,30 @@ def install_ffmpeg():
 
 def get_stream():
     try:
-        cmd = [
-            "yt-dlp",
-            "--no-warnings",
-            "--geo-bypass",
-            "--no-check-certificates",
-            "-f",
-            "best",
-            "-g",
-            f"https://www.tiktok.com/@{USERNAME}/live"
-        ]
+        url = f"https://www.tiktok.com/@{USERNAME}/live"
 
-        stream = subprocess.check_output(cmd).decode().strip()
+        headers = {
+            "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+        }
 
-        if stream:
-            print("Stream ditemukan")
-            return stream
+        r = requests.get(url, headers=headers)
+
+        if "liveRoom" in r.text:
+            print("Live terdeteksi (API)")
+            
+            cmd = [
+                "yt-dlp",
+                "-f", "best",
+                "-g",
+                url
+            ]
+
+            stream = subprocess.check_output(cmd).decode().strip()
+
+            if stream:
+                print("Stream ditemukan")
+                return stream
 
     except Exception as e:
         print("Belum live...")
@@ -131,9 +140,6 @@ def check_command():
                 new_user = text.split(" ")[1]
                 USERNAME = new_user
                 send_message(f"Ganti user ke @{USERNAME}")
-
-            elif text == "/restart":
-                send_message("Restart recording...")
 
     except Exception as e:
         print("Command Error:", e)

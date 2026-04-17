@@ -5,33 +5,38 @@ import requests
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
-USERNAME = os.getenv("pandaganjaya")
+USERNAME = os.getenv("USERNAME")
+
 
 def get_stream():
-    cmd = [
-        "yt-dlp",
-        "-g",
-        f"https://www.tiktok.com/@{USERNAME}/live"
-    ]
-    
     try:
+        cmd = [
+            "yt-dlp",
+            "--impersonate", "chrome",
+            "-g",
+            f"https://www.tiktok.com/@{USERNAME}/live"
+        ]
+
         stream = subprocess.check_output(cmd).decode().strip()
+        print("Stream ditemukan")
         return stream
-    except:
+
+    except Exception as e:
+        print("Belum live...")
         return None
 
 
 def record():
     stream = get_stream()
-    
+
     if not stream:
-        print("Belum live...")
         return None
 
     filename = f"record_{int(time.time())}.mp4"
 
     command = [
         "ffmpeg",
+        "-loglevel", "error",
         "-i",
         stream,
         "-t",
@@ -41,6 +46,7 @@ def record():
         filename
     ]
 
+    print("Recording 20 menit...")
     subprocess.run(command)
 
     return filename
@@ -49,12 +55,14 @@ def record():
 def send_telegram(file):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendVideo"
 
-    with open(file, "rb") as f:
+    with open(file, "rb") as video:
         requests.post(
             url,
             data={"chat_id": CHAT_ID},
-            files={"video": f}
+            files={"video": video}
         )
+
+    print("Video terkirim")
 
 
 while True:
@@ -64,7 +72,6 @@ while True:
         file = record()
 
         if file and os.path.exists(file):
-            print("Kirim Telegram...")
             send_telegram(file)
             os.remove(file)
 

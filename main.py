@@ -12,18 +12,22 @@ def get_stream():
     try:
         cmd = [
             "yt-dlp",
-            "--impersonate", "chrome",
+            "--no-warnings",
+            "-f", "best",
             "-g",
             f"https://www.tiktok.com/@{USERNAME}/live"
         ]
 
         stream = subprocess.check_output(cmd).decode().strip()
-        print("Stream ditemukan")
-        return stream
+
+        if stream:
+            print("Stream ditemukan")
+            return stream
 
     except Exception as e:
         print("Belum live...")
-        return None
+
+    return None
 
 
 def record():

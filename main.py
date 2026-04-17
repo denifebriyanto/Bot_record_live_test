@@ -3,6 +3,7 @@ import time
 import subprocess
 import requests
 import json
+import re
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
@@ -22,32 +23,54 @@ def install_ffmpeg():
         print("Install ffmpeg gagal")
 
 
-def get_stream():
+def get_room_id():
     try:
         url = f"https://www.tiktok.com/@{USERNAME}/live"
 
-        cmd = [
-            "yt-dlp",
-            "--no-warnings",
-            "--dump-json",
-            url
-        ]
+        headers = {
+            "User-Agent": "Mozilla/5.0"
+        }
 
-        data = subprocess.check_output(cmd).decode()
+        r = requests.get(url, headers=headers)
 
-        info = json.loads(data)
+        room = re.search(r'"roomId":"(\d+)"', r.text)
 
-        if "url" in info:
-            print("Stream ditemukan")
-            return info["url"]
+        if room:
+            print("Room ditemukan")
+            return room.group(1)
 
-    except Exception as e:
+    except:
+        pass
+
+    return None
+
+
+def get_stream():
+
+    room_id = get_room_id()
+
+    if not room_id:
         print("Belum live...")
+        return None
+
+    try:
+        api = f"https://webcast.tiktok.com/webcast/room/info/?room_id={room_id}"
+
+        r = requests.get(api).json()
+
+        stream = r["data"]["stream_url"]["hls_pull_url"]
+
+        print("Stream ditemukan")
+        return stream
+
+    except:
+        print("Stream gagal ambil")
 
     return None
 
 
 def record():
+
     stream = get_stream()
 
     if not stream:
@@ -74,6 +97,7 @@ def record():
 
 
 def send_telegram(file):
+
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendVideo"
 
     with open(file, "rb") as video:
@@ -87,6 +111,7 @@ def send_telegram(file):
 
 
 def send_message(text):
+
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
 
     requests.post(
@@ -99,10 +124,12 @@ def send_message(text):
 
 
 def check_command():
+
     global last_update_id
     global USERNAME
 
     try:
+
         url = f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates"
         r = requests.get(url).json()
 
@@ -120,6 +147,7 @@ def check_command():
         last_update_id = update["update_id"]
 
         if "message" in update:
+
             text = update["message"].get("text", "")
 
             if text == "/status":
@@ -129,8 +157,11 @@ def check_command():
                 send_message(f"User: {USERNAME}")
 
             elif text.startswith("/setuser"):
+
                 new_user = text.split(" ")[1]
+
                 USERNAME = new_user
+
                 send_message(f"Ganti user ke @{USERNAME}")
 
     except Exception as e:
@@ -140,7 +171,9 @@ def check_command():
 install_ffmpeg()
 
 while True:
+
     try:
+
         check_command()
 
         print("Monitoring...")
@@ -148,10 +181,13 @@ while True:
         file = record()
 
         if file and os.path.exists(file):
+
             send_telegram(file)
+
             os.remove(file)
 
     except Exception as e:
+
         print("Error:", e)
 
     time.sleep(10)

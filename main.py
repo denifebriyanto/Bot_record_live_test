@@ -26,9 +26,13 @@ def get_stream():
         cmd = [
             "yt-dlp",
             "--no-warnings",
+            "--impersonate", "chrome",
+            "--geo-bypass",
+            "--no-check-certificates",
             "--user-agent",
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-            "-f", "best",
+            "-f",
+            "best",
             "-g",
             f"https://www.tiktok.com/@{USERNAME}/live"
         ]
@@ -39,7 +43,7 @@ def get_stream():
             print("Stream ditemukan")
             return stream
 
-    except:
+    except Exception as e:
         print("Belum live...")
 
     return None

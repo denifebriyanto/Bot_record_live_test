@@ -1,148 +1,162 @@
+import asyncio
 import os
-import time
-import subprocess
-import requests
-import json
+from telegram import Update
+from telegram.ext import Application, CommandHandler, ContextTypes
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-CHAT_ID = os.getenv("CHAT_ID")
-USERNAME = os.getenv("USERNAME")
+from database import init_db, add_watch, remove_watch, get_watchlist, get_all_watches
+from checker import is_live
+from recorder import start_recording, stop_recording, is_recording
 
-ROOM_ID = None
+BOT_TOKEN = os.environ["BOT_TOKEN"]
+CHECK_INTERVAL = 60
 
-
-def install_ffmpeg():
-    try:
-        subprocess.run(
-            "apt-get update && apt-get install -y ffmpeg",
-            shell=True
-        )
-        print("FFMPEG Installed")
-    except:
-        print("Install ffmpeg gagal")
+os.makedirs("recordings", exist_ok=True)
 
 
-def get_room():
+# ── Commands ──────────────────────────────────────────
 
-    global ROOM_ID
-
-    try:
-
-        url = f"https://www.tiktok.com/@{USERNAME}/live"
-
-        headers = {
-            "User-Agent": "Mozilla/5.0"
-        }
-
-        r = requests.get(url, headers=headers)
-
-        if "roomId" in r.text:
-
-            room = r.text.split('"roomId":"')[1].split('"')[0]
-
-            ROOM_ID = room
-
-            print("Room ID:", ROOM_ID)
-
-            return True
-
-    except:
-        pass
-
-    return False
+async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "👋 Bot Rekam TikTok Live Aktif\n\n"
+        "/watch @username — tambah watch\n"
+        "/unwatch @username — hapus\n"
+        "/list — lihat watchlist"
+    )
 
 
-def get_stream():
+async def cmd_watch(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if not ctx.args:
+        await update.message.reply_text("Contoh: /watch @username")
+        return
 
-    global ROOM_ID
+    username = ctx.args[0].lstrip("@").lower()
+    chat_id = update.effective_chat.id
+    added_by = update.effective_user.id
 
-    try:
+    ok = await add_watch(chat_id, username, added_by)
 
-        url = f"https://webcast.tiktok.com/webcast/room/info/?room_id={ROOM_ID}"
-
-        headers = {
-            "User-Agent": "Mozilla/5.0"
-        }
-
-        r = requests.get(url, headers=headers).json()
-
-        stream = r["data"]["stream_url"]["hls_pull_url"]
-
-        print("Stream ditemukan")
-
-        return stream
-
-    except:
-
-        print("Belum live...")
-
-    return None
+    if ok:
+        await update.message.reply_text(f"✅ @{username} ditambahkan")
+    else:
+        await update.message.reply_text(f"⚠️ @{username} sudah ada")
 
 
-def record():
+async def cmd_unwatch(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if not ctx.args:
+        await update.message.reply_text("Contoh: /unwatch @username")
+        return
 
-    stream = get_stream()
+    username = ctx.args[0].lstrip("@").lower()
+    chat_id = update.effective_chat.id
 
-    if not stream:
-        return None
+    await remove_watch(chat_id, username)
 
-    filename = f"record_{int(time.time())}.mp4"
-
-    command = [
-        "ffmpeg",
-        "-loglevel",
-        "error",
-        "-i",
-        stream,
-        "-t",
-        "600",
-        "-c",
-        "copy",
-        filename
-    ]
-
-    print("Recording 10 menit...")
-    subprocess.run(command)
-
-    return filename
+    await update.message.reply_text(f"🗑️ @{username} dihapus")
 
 
-def send_telegram(file):
+async def cmd_list(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
+    watches = await get_watchlist(chat_id)
 
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendVideo"
+    if not watches:
+        await update.message.reply_text("Watchlist kosong")
+        return
 
-    with open(file, "rb") as video:
+    text = "📋 Watchlist:\n"
+    for u in watches:
+        text += f"• @{u}\n"
 
-        requests.post(
-            url,
-            data={"chat_id": CHAT_ID},
-            files={"video": video}
-        )
-
-    print("Video terkirim")
+    await update.message.reply_text(text)
 
 
-install_ffmpeg()
+# ── Scheduler cek live ───────────────────────────────
 
-while True:
+async def check_all_lives(app: Application):
+    watches = await get_all_watches()
 
-    try:
+    seen = set()
 
-        print("Monitoring...")
+    for chat_id, username in watches:
 
-        if not ROOM_ID:
-            get_room()
+        if username in seen:
+            continue
 
-        file = record()
+        seen.add(username)
 
-        if file and os.path.exists(file):
+        try:
+            live, stream_url = await is_live(username)
+        except Exception as e:
+            print(f"Retry @{username}: {e}")
+            await asyncio.sleep(5)
+            continue
 
-            send_telegram(file)
+        # Jika Live
+        if live and not is_recording(username):
 
-            os.remove(file)
+            filename = await start_recording(username, stream_url)
 
-    except Exception as e:
+            for cid, uname in watches:
+                if uname == username:
+                    await app.bot.send_message(
+                        cid,
+                        f"🔴 @{username} LIVE\n🎥 Mulai Rekam..."
+                    )
 
-        print("Error:", e)
+        # Jika Live Berhenti
+        elif not live and is_recording(username):
 
-    time.sleep(10)
+            filename = await stop_recording(username)
+
+            for cid, uname in watches:
+                if uname == username:
+
+                    try:
+                        await app.bot.send_document(
+                            cid,
+                            document=open(filename, "rb"),
+                            caption=f"✅ Rekaman @{username} selesai"
+                        )
+
+                        # Hapus file setelah kirim
+                        os.remove(filename)
+
+                    except Exception as e:
+
+                        await app.bot.send_message(
+                            cid,
+                            f"✅ Rekaman selesai\nFile: {filename}"
+                        )
+
+
+# ── Main ─────────────────────────────────────────────
+
+async def main():
+
+    await init_db()
+
+    app = Application.builder().token(BOT_TOKEN).build()
+
+    app.add_handler(CommandHandler("start", cmd_start))
+    app.add_handler(CommandHandler("watch", cmd_watch))
+    app.add_handler(CommandHandler("unwatch", cmd_unwatch))
+    app.add_handler(CommandHandler("list", cmd_list))
+
+    scheduler = AsyncIOScheduler()
+
+    scheduler.add_job(
+        check_all_lives,
+        "interval",
+        seconds=CHECK_INTERVAL,
+        args=[app]
+    )
+
+    scheduler.start()
+
+    print("🚀 Bot jalan...")
+
+    await app.run_polling()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

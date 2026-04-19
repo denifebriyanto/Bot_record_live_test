@@ -1,3 +1,6 @@
-python-telegram-bot
-requests
-yt-dlp
+python-telegram-bot==20.7
+TikTokLive==6.3.1
+apscheduler==3.10.4
+aiohttp==3.9.1
+aiosqlite==0.19.0
+streamlink==6.7.0

@@ -1,7 +1,6 @@
 python-telegram-bot==20.7
-TikTokLive==5.4.4
+TikTokLive==6.0.0
 apscheduler==3.10.4
 aiohttp==3.9.1
 aiosqlite==0.19.0
 streamlink==6.7.0
-httpx==0.25.2

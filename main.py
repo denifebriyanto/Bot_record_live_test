@@ -8,7 +8,7 @@ from database import init_db, add_watch, remove_watch, get_watchlist, get_all_wa
 from checker import is_live
 from recorder import start_recording, stop_recording, is_recording
 
-BOT_TOKEN = os.environ["BOT_TOKEN"]
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHECK_INTERVAL = 60
 
 os.makedirs("recordings", exist_ok=True)
@@ -74,7 +74,6 @@ async def cmd_list(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 async def check_all_lives(app: Application):
     watches = await get_all_watches()
-
     seen = set()
 
     for chat_id, username in watches:
@@ -118,11 +117,9 @@ async def check_all_lives(app: Application):
                             caption=f"✅ Rekaman @{username} selesai"
                         )
 
-                        # Hapus file setelah kirim
                         os.remove(filename)
 
-                    except Exception as e:
-
+                    except Exception:
                         await app.bot.send_message(
                             cid,
                             f"✅ Rekaman selesai\nFile: {filename}"
@@ -155,7 +152,12 @@ async def main():
 
     print("🚀 Bot jalan...")
 
-    await app.run_polling()
+    await app.initialize()
+    await app.start()
+    await app.updater.start_polling()
+
+    while True:
+        await asyncio.sleep(60)
 
 
 if __name__ == "__main__":

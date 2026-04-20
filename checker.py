@@ -1,5 +1,6 @@
 import asyncio
 import aiohttp
+import re
 
 async def is_live(username: str):
     headers = {
@@ -11,45 +12,69 @@ async def is_live(username: str):
 
     try:
         async with aiohttp.ClientSession() as session:
-            # Step 1: ambil room_id dari halaman live
             async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=15), allow_redirects=True) as resp:
                 html = await resp.text()
 
-                # Cek apakah live
                 if "LiveRoom" not in html and "liveRoom" not in html:
-                    print(f"⭕ @{username} tidak live (no liveRoom)")
+                    print(f"⭕ @{username} tidak live")
                     return False, None
 
-                # Ambil stream url langsung dari HTML
-                import re
-                # Cari HLS url
+                # Cari HLS url langsung dari HTML
                 match = re.search(r'(https://[^"\'\\]+\.m3u8[^"\'\\]*)', html)
                 if match:
                     hls = match.group(1)
                     print(f"✅ @{username} LIVE: {hls[:60]}...")
                     return True, hls
 
-                # Cari room_id untuk fallback
+                # Fallback: ambil room_id lalu hit webcast API
                 room_match = re.search(r'"roomId"\s*:\s*"?(\d+)"?', html)
-                if room_match:
-                    room_id = room_match.group(1)
-                    print(f"✅ @{username} LIVE room_id: {room_id}")
-                    # Ambil stream url via webcast API
-                    api_url = f"https://webcast.tiktok.com/webcast/room/info/?room_id={room_id}"
-                    async with session.get(api_url, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as api_resp:
-                        data = await api_resp.json(content_type=None)
-                        print(f"🔍 webcast raw: {str(data)[:200]}")
-                        stream = data.get("data", {}).get("stream_url", {})
-                        hls = (
-                            stream.get("hls_pull_url") or
-                            stream.get("hls_pull_url_map", {}).get("SD1") or
-                            stream.get("rtmp_pull_url")
-                        )
-                        if hls:
-                            print(f"✅ @{username} LIVE url: {hls[:60]}...")
-                            return True, hls
+                if not room_match:
+                    print(f"✅ @{username} LIVE (no room_id, fallback)")
+                    return True, f"https://www.tiktok.com/@{username}/live"
 
-                print(f"✅ @{username} LIVE (fallback)")
+                room_id = room_match.group(1)
+                print(f"✅ @{username} LIVE room_id: {room_id}")
+
+                # Coba beberapa endpoint webcast
+                endpoints = [
+                    f"https://webcast.tiktok.com/webcast/room/info/?room_id={room_id}&aid=1988",
+                    f"https://www.tiktok.com/api/live/detail/?aid=1988&roomID={room_id}",
+                ]
+
+                for endpoint in endpoints:
+                    try:
+                        async with session.get(endpoint, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as api_resp:
+                            text = await api_resp.text()
+                            print(f"🔍 endpoint raw: {text[:200]}")
+
+                            import json
+                            try:
+                                data = json.loads(text)
+                            except Exception:
+                                continue
+
+                            if data is None:
+                                continue
+
+                            stream = (
+                                data.get("data", {}).get("stream_url") or
+                                data.get("LiveRoomInfo", {}).get("stream_url") or
+                                {}
+                            )
+                            hls = (
+                                stream.get("hls_pull_url") or
+                                stream.get("hls_pull_url_map", {}).get("SD1") or
+                                stream.get("rtmp_pull_url")
+                            )
+                            if hls:
+                                print(f"✅ stream url: {hls[:60]}...")
+                                return True, hls
+                    except Exception as e:
+                        print(f"⚠️ endpoint error: {e}")
+                        continue
+
+                # Kalau semua endpoint gagal, pakai streamlink sebagai fallback
+                print(f"✅ @{username} LIVE (fallback url)")
                 return True, f"https://www.tiktok.com/@{username}/live"
 
     except Exception as e:

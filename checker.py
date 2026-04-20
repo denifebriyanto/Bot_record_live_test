@@ -1,35 +1,46 @@
 import asyncio
-import aiohttp
-import re
+from TikTokLive import TikTokLiveClient
+from TikTokLive.client.errors import UserOfflineError, UserNotFoundError
 
 async def is_live(username: str):
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
-        "Accept-Language": "en-US,en;q=0.9",
-    }
-    url = f"https://www.tiktok.com/@{username}/live"
-
+    client = TikTokLiveClient(unique_id=f"@{username}")
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=15)) as resp:
-                html = await resp.text()
+        # Cek status live
+        is_online = await client.is_live()
+        
+        if not is_online:
+            print(f"⭕ @{username} tidak live")
+            return False, None
 
-                # Kalau ada stream URL di HTML, berarti lagi live
-                match = re.search(r'"playUrl":"(https://[^"]+\.m3u8[^"]*)"', html)
-                if match:
-                    stream_url = match.group(1).replace("\\u0026", "&")
-                    print(f"✅ @{username} LIVE, url: {stream_url[:60]}...")
-                    return True, stream_url
+        # Ambil stream URL
+        await client.retrieve_room_info()
+        room = client.room_info or {}
 
-                # Cek tanda live lainnya
-                if '"statusCode":0' in html and 'liveRoom' in html:
-                    # Live tapi stream URL tidak ketangkap, coba fallback
-                    fallback = f"https://webcast.tiktok.com/webcast/room/info/?uniqueId={username}"
-                    return True, fallback
+        # Coba ambil HLS url dari berbagai key
+        stream_data = room.get("stream_url") or room.get("streamData") or {}
+        
+        hls = (
+            stream_data.get("hls_pull_url") or
+            stream_data.get("hls_pull_url_map", {}).get("SD1") or
+            stream_data.get("hls_pull_url_map", {}).get("LD") or
+            stream_data.get("rtmp_pull_url")
+        )
 
-    except asyncio.TimeoutError:
-        print(f"⏱️ Timeout cek @{username}")
+        if hls:
+            print(f"✅ @{username} LIVE url: {hls[:60]}...")
+            return True, hls
+        else:
+            # Live tapi URL tidak ketangkap, pakai fallback ffmpeg langsung
+            fallback = f"https://www.tiktok.com/@{username}/live"
+            print(f"✅ @{username} LIVE (fallback url)")
+            return True, fallback
+
+    except UserOfflineError:
+        print(f"⭕ @{username} offline")
+        return False, None
+    except UserNotFoundError:
+        print(f"❌ @{username} tidak ditemukan")
+        return False, None
     except Exception as e:
         print(f"❌ Checker error @{username}: {e}")
-
-    return False, None
+        return False, None

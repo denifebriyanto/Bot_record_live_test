@@ -1,34 +1,26 @@
-import aiohttp
-
-HEADERS = {
-    "User-Agent": "Mozilla/5.0"
-}
+import asyncio
 
 async def is_live(username):
+
     url = f"https://www.tiktok.com/@{username}/live"
 
     try:
-        async with aiohttp.ClientSession(headers=HEADERS) as session:
-            async with session.get(url, timeout=15) as resp:
+        proc = await asyncio.create_subprocess_exec(
+            "streamlink",
+            url,
+            "best",
+            "--stream-url",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
 
-                if resp.status != 200:
-                    return False, None
+        stdout, stderr = await proc.communicate()
 
-                text = await resp.text()
+        if proc.returncode == 0:
+            stream_url = stdout.decode().strip()
 
-                # Detect live
-                if "liveRoom" in text or "isLiveBroadcast" in text:
-                    
-                    # Cari stream url
-                    if "flv_pull_url" in text:
-                        start = text.find("flv_pull_url")
-                        start = text.find("http", start)
-                        end = text.find(".flv", start) + 4
-
-                        stream_url = text[start:end]
-                        return True, stream_url
-
-                    return True, None
+            if stream_url:
+                return True, stream_url
 
     except Exception as e:
         print("Checker error:", e)

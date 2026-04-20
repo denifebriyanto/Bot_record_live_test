@@ -219,3 +219,15 @@ async def on_startup(app: Application) -> None:
 
 if __name__ == "__main__":
     main()
+async def on_startup(app: Application) -> None:
+    await asyncio.sleep(5)  # tunggu instance lama mati
+    await init_db()
+    scheduler = AsyncIOScheduler()
+    scheduler.add_job(
+        check_all_lives,
+        "interval",
+        seconds=CHECK_INTERVAL,
+        args=[app]
+    )
+    scheduler.start()
+    print("🚀 Bot jalan...")

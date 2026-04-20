@@ -10,8 +10,12 @@ from recorder import start_recording, stop_recording, is_recording
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHECK_INTERVAL = 60
+SEGMENT_DURATION = 600  # 10 menit per segment
 
 os.makedirs("recordings", exist_ok=True)
+
+# Track segment tasks per username
+segment_tasks = {}
 
 
 # ── Commands ──────────────────────────────────────────
@@ -24,50 +28,135 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "/list — lihat watchlist"
     )
 
-
 async def cmd_watch(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not ctx.args:
         await update.message.reply_text("Contoh: /watch @username")
         return
-
     username = ctx.args[0].lstrip("@").lower()
     chat_id = update.effective_chat.id
     added_by = update.effective_user.id
-
     ok = await add_watch(chat_id, username, added_by)
-
     if ok:
         await update.message.reply_text(f"✅ @{username} ditambahkan")
     else:
         await update.message.reply_text(f"⚠️ @{username} sudah ada")
 
-
 async def cmd_unwatch(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not ctx.args:
         await update.message.reply_text("Contoh: /unwatch @username")
         return
-
     username = ctx.args[0].lstrip("@").lower()
     chat_id = update.effective_chat.id
-
     await remove_watch(chat_id, username)
-
     await update.message.reply_text(f"🗑️ @{username} dihapus")
-
 
 async def cmd_list(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     watches = await get_watchlist(chat_id)
-
     if not watches:
         await update.message.reply_text("Watchlist kosong")
         return
-
-    text = "📋 Watchlist:\n"
-    for u in watches:
-        text += f"• @{u}\n"
-
+    text = "📋 Watchlist:\n" + "".join(f"• @{u}\n" for u in watches)
     await update.message.reply_text(text)
+
+
+# ── Kirim file ke semua chat yang watch username ──────
+
+async def send_segment(app: Application, username: str, filename: str, segment_num: int):
+    watches = await get_all_watches()
+    for cid, uname in watches:
+        if uname != username:
+            continue
+        try:
+            file_size = os.path.getsize(filename)
+            if file_size < 50 * 1024 * 1024:  # di bawah 50MB
+                await app.bot.send_document(
+                    cid,
+                    document=open(filename, "rb"),
+                    caption=f"🎬 @{username} — segment {segment_num}"
+                )
+            else:
+                await app.bot.send_message(
+                    cid,
+                    f"⚠️ Segment {segment_num} @{username} terlalu besar "
+                    f"({file_size // 1024 // 1024}MB), tidak bisa dikirim"
+                )
+        except Exception as e:
+            print(f"Error kirim segment {segment_num} @{username}: {e}")
+            await app.bot.send_message(
+                cid,
+                f"⚠️ Gagal kirim segment {segment_num} @{username}"
+            )
+    try:
+        os.remove(filename)
+    except Exception:
+        pass
+
+
+# ── Loop rekam per segment ────────────────────────────
+
+async def recording_loop(app: Application, username: str, stream_url: str):
+    segment_num = 1
+    watches = await get_all_watches()
+
+    # Notif mulai
+    for cid, uname in watches:
+        if uname == username:
+            await app.bot.send_message(
+                cid,
+                f"🔴 @{username} LIVE\n🎥 Mulai rekam segment {segment_num}..."
+            )
+
+    while True:
+        # Cek masih live tidak
+        try:
+            live, new_url = await is_live(username)
+        except Exception:
+            live = False
+
+        if not live:
+            print(f"⏹️ @{username} sudah tidak live")
+            # Kalau masih ada rekaman yang jalan, stop dan kirim
+            if is_recording(username):
+                filename = await stop_recording(username)
+                if filename and os.path.exists(filename):
+                    await send_segment(app, username, filename, segment_num)
+            # Notif selesai
+            watches2 = await get_all_watches()
+            for cid, uname in watches2:
+                if uname == username:
+                    await app.bot.send_message(
+                        cid,
+                        f"✅ @{username} selesai live\nTotal: {segment_num - 1} segment"
+                    )
+            break
+
+        # Pakai URL terbaru kalau ada
+        url_to_use = new_url if new_url else stream_url
+
+        # Mulai rekam segment
+        filename = await start_recording(username, url_to_use, duration=SEGMENT_DURATION)
+        if not filename:
+            print(f"❌ Gagal start rekam @{username}")
+            await asyncio.sleep(10)
+            continue
+
+        print(f"🎥 Rekam segment {segment_num} @{username}")
+
+        # Tunggu sampai segment selesai (durasi + buffer 5 detik)
+        await asyncio.sleep(SEGMENT_DURATION + 5)
+
+        # Stop dan kirim
+        actual_file = await stop_recording(username)
+        if actual_file and os.path.exists(actual_file):
+            print(f"📤 Kirim segment {segment_num} @{username}")
+            await send_segment(app, username, actual_file, segment_num)
+
+        segment_num += 1
+        await asyncio.sleep(2)  # jeda sebentar sebelum segment berikutnya
+
+    # Bersihkan task
+    segment_tasks.pop(username, None)
 
 
 # ── Scheduler cek live ───────────────────────────────
@@ -77,92 +166,56 @@ async def check_all_lives(app: Application):
     seen = set()
 
     for chat_id, username in watches:
-
         if username in seen:
             continue
-
         seen.add(username)
+
+        # Skip kalau sudah ada recording loop jalan
+        if username in segment_tasks:
+            continue
 
         print(f"Checking @{username}...")
 
         try:
             live, stream_url = await is_live(username)
         except Exception as e:
-            print(f"Retry @{username}: {e}")
+            print(f"Error cek @{username}: {e}")
             continue
 
-        if live and not is_recording(username):
-
-            print(f"🔴 @{username} LIVE")
-
-            filename = await start_recording(username, stream_url)
-
-            for cid, uname in watches:
-                if uname == username:
-                    await app.bot.send_message(
-                        cid,
-                        f"🔴 @{username} LIVE\n🎥 Mulai Rekam..."
-                    )
-
-        elif not live and is_recording(username):
-
-            print(f"⏹️ @{username} selesai")
-
-            filename = await stop_recording(username)
-
-            for cid, uname in watches:
-                if uname == username:
-
-                    try:
-                        await app.bot.send_document(
-                            cid,
-                            document=open(filename, "rb"),
-                            caption=f"✅ Rekaman @{username} selesai"
-                        )
-
-                        os.remove(filename)
-
-                    except Exception:
-                        await app.bot.send_message(
-                            cid,
-                            f"✅ Rekaman selesai\nFile: {filename}"
-                        )
+        if live and stream_url:
+            print(f"🔴 @{username} LIVE, mulai recording loop")
+            task = asyncio.create_task(
+                recording_loop(app, username, stream_url)
+            )
+            segment_tasks[username] = task
 
 
 # ── Main ─────────────────────────────────────────────
 
 def main():
-
-    app = Application.builder().token(BOT_TOKEN).build()
-
+    app = (
+        Application.builder()
+        .token(BOT_TOKEN)
+        .post_init(on_startup)
+        .build()
+    )
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("watch", cmd_watch))
     app.add_handler(CommandHandler("unwatch", cmd_unwatch))
     app.add_handler(CommandHandler("list", cmd_list))
-
-
-    async def on_startup(app):
-
-        await init_db()
-
-        scheduler = AsyncIOScheduler()
-
-        scheduler.add_job(
-            check_all_lives,
-            "interval",
-            seconds=CHECK_INTERVAL,
-            args=[app]
-        )
-
-        scheduler.start()
-
-        print("🚀 Bot jalan...")
-
-
-    app.post_init = on_startup
-
     app.run_polling(drop_pending_updates=True)
 
+async def on_startup(app: Application) -> None:
+    await init_db()
+    scheduler = AsyncIOScheduler()
+    scheduler.add_job(
+        check_all_lives,
+        "interval",
+        seconds=CHECK_INTERVAL,
+        args=[app]
+    )
+    scheduler.start()
+    print("🚀 Bot jalan...")
 
 if __name__ == "__main__":
     main()

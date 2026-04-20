@@ -1,26 +1,24 @@
 import asyncio
+import subprocess
 
 async def is_live(username):
-
     url = f"https://www.tiktok.com/@{username}/live"
 
     try:
-        proc = await asyncio.create_subprocess_exec(
+        process = await asyncio.create_subprocess_exec(
             "streamlink",
+            "--stream-url",
             url,
             "best",
-            "--stream-url",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE
         )
 
-        stdout, stderr = await proc.communicate()
+        stdout, stderr = await process.communicate()
 
-        if proc.returncode == 0:
+        if process.returncode == 0:
             stream_url = stdout.decode().strip()
-
-            if stream_url:
-                return True, stream_url
+            return True, stream_url
 
     except Exception as e:
         print("Checker error:", e)

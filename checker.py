@@ -1,35 +1,33 @@
 import asyncio
-from TikTokLive import TikTokLiveClient
+import aiohttp
 
 async def is_live(username: str):
-    client = TikTokLiveClient(unique_id=f"@{username}")
+    url = f"https://www.tiktok.com/api/live/detail/?aid=1988&uniqueId={username}"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
+        "Referer": "https://www.tiktok.com/",
+    }
     try:
-        room_info = await client.fetch_room_info()
-        status = room_info.get("data", {}).get("status") or room_info.get("status")
-        print(f"🔍 @{username} status: {status}")
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+                data = await resp.json(content_type=None)
+                print(f"🔍 @{username} raw: {str(data)[:200]}")
 
-        if status != 4:
-            print(f"⭕ @{username} tidak live")
-            return False, None
+                live_room = data.get("LiveRoomInfo") or data.get("data") or {}
+                status = live_room.get("status")
+                print(f"🔍 @{username} status: {status}")
 
-        stream_url_data = (
-            room_info.get("data", {}).get("stream_url") or
-            room_info.get("stream_url") or {}
-        )
+                if status != 4:
+                    print(f"⭕ @{username} tidak live")
+                    return False, None
 
-        hls = (
-            stream_url_data.get("hls_pull_url") or
-            stream_url_data.get("hls_pull_url_map", {}).get("SD1") or
-            stream_url_data.get("hls_pull_url_map", {}).get("LD") or
-            stream_url_data.get("rtmp_pull_url")
-        )
+                stream_data = live_room.get("liveUrl") or ""
+                if stream_data:
+                    print(f"✅ @{username} LIVE: {stream_data[:60]}")
+                    return True, stream_data
 
-        if hls:
-            print(f"✅ @{username} LIVE url: {hls[:60]}...")
-            return True, hls
-        else:
-            print(f"✅ @{username} LIVE (fallback)")
-            return True, f"https://www.tiktok.com/@{username}/live"
+                print(f"✅ @{username} LIVE (fallback)")
+                return True, f"https://www.tiktok.com/@{username}/live"
 
     except Exception as e:
         print(f"❌ Checker error @{username}: {e}")

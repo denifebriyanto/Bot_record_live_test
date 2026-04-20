@@ -83,6 +83,8 @@ async def check_all_lives(app: Application):
 
         seen.add(username)
 
+        print(f"Checking @{username}...")
+
         try:
             live, stream_url = await is_live(username)
         except Exception as e:
@@ -92,6 +94,8 @@ async def check_all_lives(app: Application):
 
         # Jika Live
         if live and not is_recording(username):
+
+            print(f"🔴 @{username} LIVE")
 
             filename = await start_recording(username, stream_url)
 
@@ -104,6 +108,8 @@ async def check_all_lives(app: Application):
 
         # Jika Live Berhenti
         elif not live and is_recording(username):
+
+            print(f"⏹️ @{username} selesai")
 
             filename = await stop_recording(username)
 
@@ -119,7 +125,9 @@ async def check_all_lives(app: Application):
 
                         os.remove(filename)
 
-                    except Exception:
+                    except Exception as e:
+                        print("Send file error:", e)
+
                         await app.bot.send_message(
                             cid,
                             f"✅ Rekaman selesai\nFile: {filename}"
@@ -152,12 +160,7 @@ async def main():
 
     print("🚀 Bot jalan...")
 
-    await app.initialize()
-    await app.start()
-    await app.updater.start_polling()
-
-    while True:
-        await asyncio.sleep(60)
+    await app.run_polling(drop_pending_updates=True)
 
 
 if __name__ == "__main__":

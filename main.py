@@ -89,10 +89,8 @@ async def check_all_lives(app: Application):
             live, stream_url = await is_live(username)
         except Exception as e:
             print(f"Retry @{username}: {e}")
-            await asyncio.sleep(5)
             continue
 
-        # Jika Live
         if live and not is_recording(username):
 
             print(f"🔴 @{username} LIVE")
@@ -106,7 +104,6 @@ async def check_all_lives(app: Application):
                         f"🔴 @{username} LIVE\n🎥 Mulai Rekam..."
                     )
 
-        # Jika Live Berhenti
         elif not live and is_recording(username):
 
             print(f"⏹️ @{username} selesai")
@@ -125,9 +122,7 @@ async def check_all_lives(app: Application):
 
                         os.remove(filename)
 
-                    except Exception as e:
-                        print("Send file error:", e)
-
+                    except Exception:
                         await app.bot.send_message(
                             cid,
                             f"✅ Rekaman selesai\nFile: {filename}"
@@ -136,9 +131,7 @@ async def check_all_lives(app: Application):
 
 # ── Main ─────────────────────────────────────────────
 
-async def main():
-
-    await init_db()
+def main():
 
     app = Application.builder().token(BOT_TOKEN).build()
 
@@ -147,21 +140,29 @@ async def main():
     app.add_handler(CommandHandler("unwatch", cmd_unwatch))
     app.add_handler(CommandHandler("list", cmd_list))
 
-    scheduler = AsyncIOScheduler()
 
-    scheduler.add_job(
-        check_all_lives,
-        "interval",
-        seconds=CHECK_INTERVAL,
-        args=[app]
-    )
+    async def on_startup(app):
 
-    scheduler.start()
+        await init_db()
 
-    print("🚀 Bot jalan...")
+        scheduler = AsyncIOScheduler()
 
-    await app.run_polling(drop_pending_updates=True)
+        scheduler.add_job(
+            check_all_lives,
+            "interval",
+            seconds=CHECK_INTERVAL,
+            args=[app]
+        )
+
+        scheduler.start()
+
+        print("🚀 Bot jalan...")
+
+
+    app.post_init = on_startup
+
+    app.run_polling(drop_pending_updates=True)
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()

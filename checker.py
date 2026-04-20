@@ -1,27 +1,27 @@
 import asyncio
 from TikTokLive import TikTokLiveClient
-from TikTokLive.client.errors import AlreadyConnectedError
 
 async def is_live(username: str):
     client = TikTokLiveClient(unique_id=f"@{username}")
     try:
-        await client.retrieve_room_info()
-        room = client.room_info or {}
-
-        # status 4 = sedang live
-        status = room.get("status")
+        room_info = await client.fetch_room_info()
+        status = room_info.get("data", {}).get("status") or room_info.get("status")
         print(f"🔍 @{username} status: {status}")
 
         if status != 4:
             print(f"⭕ @{username} tidak live")
             return False, None
 
-        stream_data = room.get("stream_url") or {}
+        stream_url_data = (
+            room_info.get("data", {}).get("stream_url") or
+            room_info.get("stream_url") or {}
+        )
+
         hls = (
-            stream_data.get("hls_pull_url") or
-            stream_data.get("hls_pull_url_map", {}).get("SD1") or
-            stream_data.get("hls_pull_url_map", {}).get("LD") or
-            stream_data.get("rtmp_pull_url")
+            stream_url_data.get("hls_pull_url") or
+            stream_url_data.get("hls_pull_url_map", {}).get("SD1") or
+            stream_url_data.get("hls_pull_url_map", {}).get("LD") or
+            stream_url_data.get("rtmp_pull_url")
         )
 
         if hls:

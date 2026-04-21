@@ -16,13 +16,16 @@ async def start_recording(username: str, stream_url: str, duration: int = 600) -
         "-y",
         "-user_agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
         "-headers", "Referer: https://www.tiktok.com/\r\n",
+        "-timeout", "10000000",
+        "-reconnect", "1",
+        "-reconnect_streamed", "1",
+        "-reconnect_delay_max", "5",
         "-i", stream_url,
         "-t", str(duration),
         "-c", "copy",
         "-movflags", "frag_keyframe+empty_moov",
         filename
     ]
-    print(f"🎬 CMD: {' '.join(cmd[:6])}...")
     try:
         process = await asyncio.create_subprocess_exec(
             *cmd,
@@ -47,8 +50,7 @@ async def stop_recording(username: str) -> str | None:
         process.terminate()
         stdout, stderr = await process.communicate()
         if stderr:
-            err = stderr.decode()[-500:]
-            print(f"🔍 ffmpeg: {err}")
+            print(f"🔍 ffmpeg: {stderr.decode()[-300:]}")
     except Exception as e:
         print(f"⚠️ Stop error: {e}")
     print(f"🛑 Stop rekam @{username} -> {filename}")

@@ -10,7 +10,7 @@ from recorder import start_recording, stop_recording, is_recording
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHECK_INTERVAL = 60
-SEGMENT_DURATION = 600
+SEGMENT_DURATION = 300
 
 os.makedirs("recordings", exist_ok=True)
 

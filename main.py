@@ -12,7 +12,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHECK_INTERVAL = 60
 SEGMENT_DURATION = 300
 
-os.makedirs("recordings", exist_ok=True)
+os.makedirs("/tmp/recordings", exist_ok=True)
 
 segment_tasks = {}
 checker_lock = None
@@ -116,10 +116,12 @@ async def recording_loop(app: Application, username: str, stream_url: str):
             )
 
     while True:
+        # Cek masih live + ambil URL fresh
         try:
-            live, new_url = await is_live(username)
+            live, fresh_url = await is_live(username)
         except Exception:
             live = False
+            fresh_url = None
 
         if not live:
             print(f"⏹️ @{username} sudah tidak live")
@@ -132,7 +134,10 @@ async def recording_loop(app: Application, username: str, stream_url: str):
                     )
             break
 
-        url_to_use = new_url if new_url else stream_url
+        # Selalu pakai URL fresh
+        url_to_use = fresh_url if fresh_url else stream_url
+        print(f"🔗 URL segment {segment_num}: {url_to_use[:60]}...")
+
         filename = await start_recording(username, url_to_use, duration=SEGMENT_DURATION)
         if not filename:
             print(f"❌ Gagal start rekam @{username}")
@@ -160,11 +165,11 @@ async def recording_loop(app: Application, username: str, stream_url: str):
         actual_file = await stop_recording(username)
         if actual_file and os.path.exists(actual_file):
             file_size = os.path.getsize(actual_file)
-            if file_size > 0:
+            if file_size > 100 * 1024:  # minimal 100KB biar bukan file rusak
                 print(f"📤 Kirim segment {segment_num} @{username}")
                 await send_segment(app, username, actual_file, segment_num)
             else:
-                print(f"⚠️ File kosong, skip")
+                print(f"⚠️ File terlalu kecil ({file_size} bytes), skip")
                 try:
                     os.remove(actual_file)
                 except Exception:

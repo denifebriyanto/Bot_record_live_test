@@ -15,6 +15,7 @@ SEGMENT_DURATION = 600
 os.makedirs("recordings", exist_ok=True)
 
 segment_tasks = {}
+checker_lock = None
 
 
 # ── Commands ──────────────────────────────────────────
@@ -63,17 +64,30 @@ async def cmd_list(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 async def send_segment(app: Application, username: str, filename: str, segment_num: int):
     watches = await get_all_watches()
+
+    if not os.path.exists(filename):
+        print(f"❌ File tidak ada: {filename}")
+        return
+
+    file_size = os.path.getsize(filename)
+    print(f"📦 Ukuran segment {segment_num}: {file_size} bytes")
+
+    if file_size == 0:
+        print(f"❌ File kosong, skip")
+        os.remove(filename)
+        return
+
     for cid, uname in watches:
         if uname != username:
             continue
         try:
-            file_size = os.path.getsize(filename)
             if file_size < 50 * 1024 * 1024:
                 await app.bot.send_document(
                     cid,
                     document=open(filename, "rb"),
                     caption=f"🎬 @{username} — segment {segment_num}"
                 )
+                print(f"✅ Berhasil kirim segment {segment_num} ke {cid}")
             else:
                 await app.bot.send_message(
                     cid,
@@ -81,11 +95,7 @@ async def send_segment(app: Application, username: str, filename: str, segment_n
                     f"({file_size // 1024 // 1024}MB), tidak bisa dikirim"
                 )
         except Exception as e:
-            print(f"Error kirim segment {segment_num} @{username}: {e}")
-            await app.bot.send_message(
-                cid,
-                f"⚠️ Gagal kirim segment {segment_num} @{username}"
-            )
+            print(f"❌ Error kirim segment {segment_num}: {e}")
     try:
         os.remove(filename)
     except Exception:
@@ -106,7 +116,6 @@ async def recording_loop(app: Application, username: str, stream_url: str):
             )
 
     while True:
-        # Cek masih live sebelum mulai segment baru
         try:
             live, new_url = await is_live(username)
         except Exception:
@@ -132,7 +141,7 @@ async def recording_loop(app: Application, username: str, stream_url: str):
 
         print(f"🎥 Rekam segment {segment_num} @{username}")
 
-        # Cek live setiap 30 detik selama rekam berlangsung
+        # Cek live setiap 30 detik
         still_live = True
         elapsed = 0
         while elapsed < SEGMENT_DURATION:
@@ -147,7 +156,7 @@ async def recording_loop(app: Application, username: str, stream_url: str):
                 print(f"⏹️ @{username} berhenti live di detik ke-{elapsed}")
                 break
 
-        # Stop rekam dan kirim apapun yang sudah terekam
+        # Stop dan kirim
         actual_file = await stop_recording(username)
         if actual_file and os.path.exists(actual_file):
             file_size = os.path.getsize(actual_file)
@@ -161,7 +170,6 @@ async def recording_loop(app: Application, username: str, stream_url: str):
                 except Exception:
                     pass
 
-        # Kalau live sudah berhenti, kirim notif dan keluar
         if not still_live:
             watches2 = await get_all_watches()
             for cid, uname in watches2:
@@ -181,31 +189,39 @@ async def recording_loop(app: Application, username: str, stream_url: str):
 # ── Scheduler cek live ───────────────────────────────
 
 async def check_all_lives(app: Application):
-    watches = await get_all_watches()
-    seen = set()
+    global checker_lock
+    if checker_lock is None:
+        checker_lock = asyncio.Lock()
 
-    for chat_id, username in watches:
-        if username in seen:
-            continue
-        seen.add(username)
+    if checker_lock.locked():
+        return
 
-        if username in segment_tasks:
-            continue
+    async with checker_lock:
+        watches = await get_all_watches()
+        seen = set()
 
-        print(f"Checking @{username}...")
+        for chat_id, username in watches:
+            if username in seen:
+                continue
+            seen.add(username)
 
-        try:
-            live, stream_url = await is_live(username)
-        except Exception as e:
-            print(f"Error cek @{username}: {e}")
-            continue
+            if username in segment_tasks:
+                continue
 
-        if live and stream_url:
-            print(f"🔴 @{username} LIVE, mulai recording loop")
-            task = asyncio.create_task(
-                recording_loop(app, username, stream_url)
-            )
-            segment_tasks[username] = task
+            print(f"Checking @{username}...")
+
+            try:
+                live, stream_url = await is_live(username)
+            except Exception as e:
+                print(f"Error cek @{username}: {e}")
+                continue
+
+            if live and stream_url:
+                print(f"🔴 @{username} LIVE, mulai recording loop")
+                task = asyncio.create_task(
+                    recording_loop(app, username, stream_url)
+                )
+                segment_tasks[username] = task
 
 
 # ── Main ─────────────────────────────────────────────

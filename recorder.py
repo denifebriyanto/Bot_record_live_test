@@ -5,7 +5,7 @@ from datetime import datetime
 SAVE_DIR = "recordings"
 active_recordings = {}
 
-async def start_recording(username: str, stream_url: str, duration: int = 600) -> str | None:
+async def start_recording(username: str, stream_url: str, duration: int = 300) -> str | None:
     if username in active_recordings:
         return None
     os.makedirs(SAVE_DIR, exist_ok=True)
@@ -16,21 +16,18 @@ async def start_recording(username: str, stream_url: str, duration: int = 600) -
         "-y",
         "-user_agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
         "-headers", "Referer: https://www.tiktok.com/\r\n",
-        "-timeout", "10000000",
-        "-reconnect", "1",
-        "-reconnect_streamed", "1",
-        "-reconnect_delay_max", "5",
         "-i", stream_url,
         "-t", str(duration),
-        "-c", "copy",
-        "-movflags", "frag_keyframe+empty_moov",
+        "-c:v", "copy",
+        "-c:a", "aac",
+        "-bsf:a", "aac_adtstoasc",
         filename
     ]
     try:
         process = await asyncio.create_subprocess_exec(
             *cmd,
-            stdout=asyncio.subprocess.DEVNULL,
-            stderr=asyncio.subprocess.DEVNULL
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
         )
         active_recordings[username] = (process, filename)
         print(f"🎥 Mulai rekam @{username} PID:{process.pid}")
@@ -60,6 +57,16 @@ async def stop_recording(username: str) -> str | None:
             pass
     except Exception:
         pass
+
+    # Baca stderr untuk debug
+    try:
+        _, stderr = await asyncio.wait_for(process.communicate(), timeout=5)
+        if stderr:
+            err = stderr.decode()[-500:]
+            print(f"🔍 ffmpeg log: {err}")
+    except Exception:
+        pass
+
     print(f"🛑 Stop rekam @{username} -> {filename}")
     if os.path.exists(filename):
         size = os.path.getsize(filename)

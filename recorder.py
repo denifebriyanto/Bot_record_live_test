@@ -29,8 +29,8 @@ async def start_recording(username: str, stream_url: str, duration: int = 600) -
     try:
         process = await asyncio.create_subprocess_exec(
             *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL
         )
         active_recordings[username] = (process, filename)
         print(f"🎥 Mulai rekam @{username} PID:{process.pid}")
@@ -48,12 +48,24 @@ async def stop_recording(username: str) -> str | None:
     process, filename = active_recordings.pop(username)
     try:
         process.terminate()
-        stdout, stderr = await process.communicate()
-        if stderr:
-            print(f"🔍 ffmpeg: {stderr.decode()[-300:]}")
-    except Exception as e:
-        print(f"⚠️ Stop error: {e}")
+    except Exception:
+        pass
+    try:
+        await asyncio.wait_for(process.wait(), timeout=10)
+    except asyncio.TimeoutError:
+        try:
+            process.kill()
+            await process.wait()
+        except Exception:
+            pass
+    except Exception:
+        pass
     print(f"🛑 Stop rekam @{username} -> {filename}")
+    if os.path.exists(filename):
+        size = os.path.getsize(filename)
+        print(f"📦 File size: {size} bytes")
+    else:
+        print(f"❌ File tidak ada: {filename}")
     return filename
 
 def is_recording(username: str) -> bool:
